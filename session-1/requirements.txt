@@ -4,3 +4,6 @@ requests
 numpy
 openai
 python-dotenv
+beautifulsoup4
+openpyxl
+ace_tools
