@@ -1,0 +1,11 @@
+project ideas
+
+1. resume job matching
+2. college guessing
+3.
+
+### Tips and tricks
+- Instead of scraping, use RSS feed parser
+- Legal & recommended, no danger of being blocked
+
+import feedparser 

@@ -1,0 +1,6 @@
+feedparser
+pandas
+requests
+numpy
+openai
+python-dotenv
