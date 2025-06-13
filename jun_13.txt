@@ -1,0 +1,19 @@
+Scraping:
+- CloudFlare (Prevents scraping ??)
+- https://docs.crawl4ai.com/
+
+LLMs: We make algorithm by examples, compared to making it by logic, a meta
+language (like high level language)
+
+Examples to LLM have to be given in proper syntactical form. Read the docs for
+prompt engineering for each LLM
+
+Quite important: https://dspy.ai/
+
+OLlama => Local run of LLM
+
+gradio: <= UI with LLM
+
+Use of pydantic to control output: See https://github.com/ShawhinT/AI-Builders-Bootcamp-5/tree/main/TA-extra-examples
+
+
