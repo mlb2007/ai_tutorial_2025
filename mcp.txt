@@ -1,0 +1,45 @@
+Ref: https://www.youtube.com/live/7j_NE6Pjv-E
+
+LLMs are just generative AI. They generate the next text/word.
+
+If LLMS are attached to tools, then LLM can appealt to the tool and actually do
+a job, a task. Say for example, LLM can make a SQL query and send it to SQL
+database and get back the result
+
+LLMs were directly attached to various tools and for each tool, the LLM or some
+intermdiary must be there to make sure that LLM sends the proper "instructions"
+to get the tool to do its task!
+
+Now MCP is an abstraction that sits inbetween LLMs and tools/services.
+
+- Does MCP talk to LLMs and ask it to provide output in some format that tools
+understand ?
+
+- Can tools do the same and ask LLMs thru the MCP ? (i.e. is it two way
+communication ?)
+
+All wrong. We talk to LLM to do the task(s) (We have no idea that there are
+tools built with LLMs). Further, we have a multitude of variosu
+tasks/tools/services with its own requirements, but our only point of contact
+is thru the LLM (chat, for example). The LLM has to cater to whms and fancies
+of each service. This is hard.
+The MCP layer attached to LLM allows this to happen. The LLMs talk to MCP and
+then use the MCP abstraction to talk to various tools/task/services
+
+MCP has 3 components:
+
+MCP client -------------> MCP server --------------> external tools/services
+           MCP protocol
+
+Now MCP client is the one attached to LLMs. For example cursor is an MCP client
+that also has LLM capabilties. 
+
+Suppose say for example, some database service (say BigQuery) wants their
+database to be used by others. They *wirte* the MCP server (based on the MCP
+protocol/standards) and now by attaching the client of ours to this vendor
+provided MCP server, we get to access their service. The cool thing is that the
+API changes happen at the server and is done by the vendor and client need not
+be worried about it. Client talks to any service/tools using MCP protocol which
+is standardized!
+
+

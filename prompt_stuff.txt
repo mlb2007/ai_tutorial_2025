@@ -1,0 +1,67 @@
+Ref: https://www.youtube.com/live/JEMYuzrKLUw
+
+Each prompt has 5 different roles
+
+1. A signature: prompt as a function signature => input -> output behavior
+That is consider the LLM model as a function, the prompt gives the 
+input, the LLM model does the transformation to give the output
+
+2. A predictor: prompt as inference-time strategy
+In this we use the prompt to specify to the LLM, the tools that it should use,
+how to specialize itself for this particular task. 
+For example: you are an agent, use these tools.
+
+3. An Adapter: Prompt as an adapter
+In this sense prompt tells about the computation to format the input and how
+the output must be formatted. 
+Adapter is simply how the user input will look like, say with markdown like
+syntax or XML like tags etc. i.e. a simple formatter (as every LLM has its own
+quirks as to how the input should look like ...!!!)
+
+It is at this stage that the customized prompt customized for that particular
+LLM) is written. (by DSPy perhaps!)
+
+==> i.e. we would say something like read the middle,
+skip the top, read top-down and bottom up etc. We even suggest re-trying if the
+output is not as we desire <== This is not adapter, but more like constraints
+(metrics & assertions, see below ...)
+
+4. Metrics and assertions: Prompt as constraint provider
+We also tell the prompt, the constraints. E.g. be factual, use only the text
+given etc.,
+
+5. Optimizer: Prompt as a NLP based modifier to optimize 
+Here we modify the language or whatever to coerce the response from the model.
+It is here that we realize how LLMs are so sensitive to our prompt and this is
+a way to do trial and error and "optimize" for our use case
+(more advanced applications: finte-tuning the LLM itself)
+
+=====
+There are many strategies to express the signature
+e.g. a signature with chain_of_thought() strategy
+gen_query = dspy.ChainOfThought("context, question -> query")
+The string is the signature or what we are expecting LLM to do with context,
+question as function input and LLM expected to output a query
+
+The strategies correspond to Step 2 ??
+
+Then there are optimizer libraries like (MIPROv2(prompt_program)) that does
+the job of tweaking the prompt (all done in a transparent manner) based on the
+metrics and assertions we have come up with in step 4
+
+=> After this step, it actually spits out a better prompt, adds examples etc.!
+The optimizer library actually generates examples (by rejection of bad examples, i.e.
+givening examples of what does not work!)
+
+DSPy works on these great assumptions:
+1. We have only API access to LLM. No access to logprobs or weights (for fine
+   tuning for example)
+2. We don't have examples for intermediate steps (i.e. for intermediate modules
+   we construct wirh DSPy)
+
+3. We have only a very few examples at high level and can only call with rate
+   limiting .. (budget conscious)
+
+ 
+ 
+
