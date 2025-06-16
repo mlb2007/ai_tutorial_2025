@@ -7,3 +7,7 @@ python-dotenv
 beautifulsoup4
 openpyxl
 ace_tools
+dspy
+pydantic
+instructor
+crawl4ai
