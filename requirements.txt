@@ -11,3 +11,4 @@ dspy
 pydantic
 instructor
 crawl4ai
+faiss-cpu

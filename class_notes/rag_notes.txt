@@ -1,0 +1,18 @@
+ColbertV2 (Huggingface) means late binding BERT encoder.
+
+The important difference between LLM and colbertV2 is that LLM is causal based
+modeling. In this sense, the future words are masked when transformers are used
+thus providing robust causality and proper prediction of next word.
+
+In contrast, COLBERT allows all tokens to pay attention to all tokens in
+a sentence whether forward or backward (future or past) and thus token context
+is robust. But this will not produce a coherent "story telling" as the notion
+of forward/backward is lost. Thus this kind of encoding (not LLMs) are used in
+retrieval of documents, where one is interested in match between query tokens
+and document tokens without paying much heed to order of tokens themselves.
+
+####
+A semantic F1 response is the answer to:
+* How well does the system respond to messages in comparison to golden truth ?
+* How well does the system *not* respond to things/data *not* in goden truth ?
+

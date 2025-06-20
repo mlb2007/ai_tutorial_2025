@@ -63,5 +63,16 @@ DSPy works on these great assumptions:
    limiting .. (budget conscious)
 
  
+### DSPy
+If we subclass DSPy module, we need to over-ride __init__() and forward()
+methods. In the context of RAG, forward() is where the input query/question is 
+used to generate or get the context. For example, we can scour wikipedia thru
+dspy as:
+dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')(query, k=1) to
+get to wikipedia information. This could be a LLM call as well or a database
+call to get the relevant information. 
+
+Additionally, the same input question is *again* used with LLM, now with
+additional context to generate the final response.
  
 
