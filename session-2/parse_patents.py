@@ -268,20 +268,77 @@ def extract_patent_data(patent_url: str) -> ExtractionResult:
         summary=clean_patent_field(result.patent_data.summary)
     )
     
-    return cleaned_data
+    return cleaned_data, total_cost, attempts
+
+def process_patents_batch(patent_ids: List[tuple[str, int]]) -> dict:
+    """
+    Process a batch of patent IDs and return structured data keyed by patent ID.
+    
+    Args:
+        patent_ids: List of tuples containing (country_code, patent_number)
+        
+    Returns:
+        Dictionary with patent IDs as keys and tuples of (patent_data, total_cost, attempts) as values
+    """
+    def construct_patent_url(country_code: str, patent_number: int) -> str:
+        """Construct Google Patents URL from country code and patent number"""
+        return f"https://patents.google.com/patent/{country_code}{patent_number}"
+    
+    def extract_patent_id(country_code: str, patent_number: int) -> str:
+        """Extract patent ID from country code and patent number"""
+        return f"{country_code}{patent_number}"
+    
+    def process_single_patent(patent_tuple: tuple[str, int]) -> tuple[str, tuple]:
+        """Process a single patent and return (patent_id, data_tuple)"""
+        country_code, patent_number = patent_tuple
+        try:
+            patent_url = construct_patent_url(country_code, patent_number)
+            patent_data, total_cost, attempts = extract_patent_data(patent_url)
+            patent_id = extract_patent_id(country_code, patent_number)
+            return patent_id, (patent_data, total_cost, attempts)
+        except Exception as e:
+            patent_id = extract_patent_id(country_code, patent_number)
+            print(f"Error processing patent {patent_id}: {e}")
+            return patent_id, (None, 0.0, 0)
+    
+    # Process all patents using functional approach
+    results = dict(map(process_single_patent, patent_ids))
+    
+    # Print summary statistics
+    successful_extractions = sum(1 for data in results.values() if data[0] is not None)
+    total_cost = sum(data[1] for data in results.values() if data[0] is not None)
+    total_attempts = sum(data[2] for data in results.values() if data[0] is not None)
+    
+    print(f"Batch processing complete:")
+    print(f"  Successful extractions: {successful_extractions}/{len(patent_ids)}")
+    print(f"  Total cost: ${total_cost:.6f}")
+    print(f"  Total attempts: {total_attempts}")
+    
+    return results
 
 # Example usage
 if __name__ == "__main__":
-    patent_url = "https://patents.google.com/patent/US6853284"
-
+    patent_ids = [
+        ("US", 6853284),
+        ("US", 6853285),
+        ("US", 6853286)
+    ]
+    
     try:
-        patent_data = extract_patent_data(patent_url)
-        print("Patent Title:", patent_data.title)
-        print("Abstract:", patent_data.abstract)
-        print("Background:", patent_data.background)
-        print("Summary:", patent_data.summary)
-        print("Claims:")
-        for i, claim in enumerate(patent_data.claims, 1):
-            print(f"  {i}. {claim}")
+        patent_results = process_patents_batch(patent_ids)
+        
+        # Display results for each patent
+        for patent_id, (patent_data, total_cost, attempts) in patent_results.items():
+            if patent_data is not None:
+                print(f"\n=== Patent {patent_id} ===")
+                print("Title:", patent_data.title)
+                print("Abstract:", patent_data.abstract[:200] + "..." if len(patent_data.abstract) > 200 else patent_data.abstract)
+                print("Summary:", patent_data.summary)
+                print(f"Claims count: {len(patent_data.claims)}")
+                print(f"Cost: ${total_cost:.6f}, Attempts: {attempts}")
+            else:
+                print(f"\n=== Patent {patent_id} ===")
+                print("Failed to extract data")
+                
     except Exception as e:
         print(f"Error: {e}")
