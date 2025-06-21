@@ -12,3 +12,4 @@ pydantic
 instructor
 crawl4ai
 faiss-cpu
+streamlit

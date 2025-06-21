@@ -1,6 +1,6 @@
 import dspy
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional
 import requests
 import os
 from dotenv import load_dotenv
@@ -18,8 +18,9 @@ load_dotenv()
 # Get API key from environment variables
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY_PERSONAL')
 
-# Configure DSPy with OpenAI
-lm = dspy.LM("openai/gpt-4o-mini", api_key=OPENAI_API_KEY)
+MAX_TOKENS = 16384
+# Configure DSPy with OpenAI and context length limits - reduced max_tokens to stay within limits
+lm = dspy.LM("openai/gpt-4o-mini", api_key=OPENAI_API_KEY, max_tokens=MAX_TOKENS)
 dspy.configure(lm=lm)
 
 class PatentData(BaseModel):
@@ -28,12 +29,12 @@ class PatentData(BaseModel):
     abstract: str = Field(description="Patent abstract")
     background: str = Field(description="Background section of the patent (including 'BACKGROUND' and 'BACKGROUND OF THE INVENTION' sections)")
     claims: List[str] = Field(description="List of patent claims")
-    summary: str = Field(description="Concise summary of the patent's key innovations and technical contributions")
+    summary: Optional[str] = Field(description="Concise summary of the patent's key innovations and technical contributions", default=None)
 
 class PatentParser(dspy.Signature):
     """Extract structured patent information from HTML content"""
     html: str = dspy.InputField(desc="Raw HTML content from Google Patents page")
-    patent_data: PatentData = dspy.OutputField(desc="Structured patent data including background sections but excluding figures and figure explanations")
+    patent_data: PatentData = dspy.OutputField(desc="Structured patent data including background sections but excluding figures and figure explanations. Do NOT generate a summary field.")
 
 @dataclass
 class ValidationResult:
@@ -47,6 +48,7 @@ class ExtractionResult:
     patent_data: PatentData
     total_cost: float
     eval_results: list[bool]
+    truncated_message: Optional[str] = None
 
 class PatentValidator:
     """Functional validator for patent data using composition pattern"""
@@ -54,16 +56,8 @@ class PatentValidator:
     @staticmethod
     def validate_summary(patent_data: PatentData) -> ValidationResult:
         """Validate that the summary captures key aspects of the patent"""
-        if not patent_data.summary or len(patent_data.summary.strip()) < 50:
-            return ValidationResult(False, "Summary too short or empty")
-        summary_lower = patent_data.summary.lower()
-        title_words = set(patent_data.title.lower().split()[:3])
-        abstract_words = set(patent_data.abstract.lower().split()[:5])
-        has_title_connection = any(word in summary_lower for word in title_words)
-        has_abstract_connection = any(word in summary_lower for word in abstract_words)
-        if not (has_title_connection and has_abstract_connection):
-            return ValidationResult(False, "Summary lacks connection to title or abstract")
-        return ValidationResult(True)
+        # Summary is suppressed by default, so always return valid
+        return ValidationResult(True, "Summary suppressed")
 
     @staticmethod
     def validate_background(patent_data: PatentData) -> ValidationResult:
@@ -144,6 +138,41 @@ def clean_text(text: str) -> str:
     ]
     return reduce(lambda text, operation: operation(text), cleaning_operations, text)
 
+def truncate_html_content(html_content: str, max_tokens: int = MAX_TOKENS) -> tuple[str, str]:
+    """
+    Truncate HTML content to fit within token limits.
+    Returns (truncated_content, truncated_message)
+    """
+    # Rough estimation: 1 token ≈ 4 characters for English text
+    estimated_tokens = len(html_content) // 4
+    
+    if estimated_tokens <= max_tokens:
+        return html_content, ""
+    
+    # Calculate how much to truncate - leave room for prompt overhead
+    target_length = (max_tokens - 10000) * 4  # Reserve 10k tokens for prompt
+    truncated_content = html_content[:target_length]
+    
+    # Try to truncate at a reasonable boundary (end of a tag or sentence)
+    # Look for the last complete sentence or HTML tag
+    last_period = truncated_content.rfind('.')
+    last_tag_end = truncated_content.rfind('>')
+    last_newline = truncated_content.rfind('\n')
+    
+    # Find the best truncation point
+    truncation_points = [last_period, last_tag_end, last_newline]
+    valid_points = [p for p in truncation_points if p > target_length * 0.8]  # Within 80% of target
+    
+    if valid_points:
+        best_point = max(valid_points)
+        truncated_content = truncated_content[:best_point]
+    
+    # if truncated, add a warning to the content
+    truncated_message = ""
+    if True:
+        truncated_message = "\n\n[WARNING: The content has been truncated to fit within the token limit. Please check the content for accuracy.]"
+
+    return truncated_content, truncated_message
 
 def fetch_patent_html(patent_url: str) -> str:
     """Fetch HTML content from Google Patents URL"""
@@ -190,16 +219,33 @@ def extract_patent_data(patent_url: str) -> ExtractionResult:
     """Main function to extract structured patent data with cost tracking"""
     print(f"Fetching the HTML content from the patent URL: {patent_url}")
     html_content = fetch_patent_html(patent_url)
-
-    print(f"Predicting the patent data from the HTML content using DSPy prompt")
-    predictor = dspy.Predict(PatentParser)
-    result = predictor(html=html_content)
-
-    print(f"Evaluating the patent data using the LLM-as-judge metric")
-    # Evaluate using the LLM-as-judge metric, with_inputs() is essential.
-    devset = [dspy.Example(html=html_content).with_inputs('html')]
-    evaluator = dspy.evaluate.Evaluate(devset=devset, metric=create_extraction_metric())
-    eval_results = evaluator(predictor)
+    
+    # First attempt: try without truncation
+    print(f"Attempting extraction without truncation...")
+    try:
+        predictor = dspy.Predict(PatentParser)
+        result = predictor(html=html_content)
+        truncated_message = ""
+        
+        # If successful, proceed with evaluation
+        print(f"Evaluating the patent data using the LLM-as-judge metric")
+        devset = [dspy.Example(html=html_content).with_inputs('html')]
+        evaluator = dspy.evaluate.Evaluate(devset=devset, metric=create_extraction_metric())
+        eval_results = evaluator(predictor)
+        
+    except Exception as e:
+        print(f"First attempt failed: {e}")
+        print(f"Retrying with truncated content...")
+        
+        # Second attempt: with truncation
+        html_content, truncated_message = truncate_html_content(html_content)
+        if truncated_message:
+            print(f"WARNING: The content has been truncated to fit within the token limit. Please check the content for accuracy.")
+            print(f"Truncated message: {truncated_message}")
+        
+        predictor = dspy.Predict(PatentParser)
+        result = predictor(html=html_content)
+        eval_results = []  # Skip evaluation for truncated content
     
     def clean_patent_field(field_value: str) -> str:
         return clean_text(field_value)
@@ -215,9 +261,9 @@ def extract_patent_data(patent_url: str) -> ExtractionResult:
 
     total_cost = calculate_total_cost(lm)
 
-    return ExtractionResult(patent_data=cleaned_data, total_cost=total_cost, eval_results=eval_results)
+    return ExtractionResult(patent_data=cleaned_data, total_cost=total_cost, eval_results=eval_results, truncated_message=truncated_message)
 
-def process_patents_batch(patent_ids: List[tuple[str, int]]) -> dict:
+def process_patents_batch(patent_ids: List[tuple[str, str]]) -> dict:
     """
     Process a batch of patent IDs and return structured data keyed by patent ID.
     Args:
@@ -225,11 +271,11 @@ def process_patents_batch(patent_ids: List[tuple[str, int]]) -> dict:
     Returns:
         Dictionary with patent IDs as keys and tuples of (patent_data, total_cost, attempts) as values
     """
-    def construct_patent_url(country_code: str, patent_number: int) -> str:
+    def construct_patent_url(country_code: str, patent_number: str) -> str:
         return f"https://patents.google.com/patent/{country_code}{patent_number}"
-    def extract_patent_id(country_code: str, patent_number: int) -> str:
+    def extract_patent_id(country_code: str, patent_number: str) -> str:
         return f"{country_code}{patent_number}"
-    def process_single_patent(patent_tuple: tuple[str, int]) -> tuple[str, ExtractionResult]:
+    def process_single_patent(patent_tuple: tuple[str, str]) -> tuple[str, ExtractionResult]:
         country_code, patent_number = patent_tuple
         try:
             patent_url = construct_patent_url(country_code, patent_number)
@@ -251,7 +297,8 @@ def process_patents_batch(patent_ids: List[tuple[str, int]]) -> dict:
 # Example usage
 if __name__ == "__main__":
     patent_ids = [
-        ("US", 6853284)
+        ("US", "6853284"),
+        ("US", "5952909")
     ]
     try:
         patent_results = process_patents_batch(patent_ids)
