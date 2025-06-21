@@ -9,6 +9,8 @@ import re
 from functools import reduce
 from dataclasses import dataclass
 
+from dspy.evaluate import Evaluate
+
 # Suppress Pydantic warnings
 import warnings
 warnings.filterwarnings('ignore', category=UserWarning, module='pydantic')
@@ -33,7 +35,7 @@ class PatentData(BaseModel):
 
 class PatentParser(dspy.Signature):
     """Extract structured patent information from HTML content"""
-    html_content: str = dspy.InputField(desc="Raw HTML content from Google Patents page")
+    html: str = dspy.InputField(desc="Raw HTML content from Google Patents page")
     patent_data: PatentData = dspy.OutputField(desc="Structured patent data including background sections but excluding figures and figure explanations")
 
 @dataclass
@@ -48,25 +50,6 @@ class ExtractionResult:
     patent_data: PatentData
     total_cost: float
     attempts: int
-
-# Example metric: checks if extracted fields match ground-truth fields
-def extraction_metric(example, pred, trace=None):
-    # Assume both are dicts with the same keys
-    return example.fields == pred.fields
-
-# Use dspy's Evaluate to evaluate extraction quality
-def evaluate_extraction_quality(dataset, predictor):
-    """
-    Evaluate the extraction quality of the predictor on the given dataset using dspy.Evaluate.
-    """
-    # dspy.Evaluate expects a metric function and a dataset of (input, expected_output) pairs
-    evaluator = dspy.evaluate.Evaluate(
-        metric=extraction_metric,
-        inputs=["html_content"],
-        outputs=["patent_data"]
-    )
-    results = evaluator(predictor, dataset)
-    return results
 
 class PatentValidator:
     """Functional validator for patent data using composition pattern"""
@@ -164,39 +147,6 @@ def clean_text(text: str) -> str:
     ]
     return reduce(lambda text, operation: operation(text), cleaning_operations, text)
 
-def clean_claim_text(claim: str) -> str:
-    """Clean claim text by removing redundant claim numbers and extra formatting"""
-    if not claim:
-        return ""
-    claim_cleaning_operations = [
-        lambda t: re.sub(r'^(\d+)\.\s*\1\.\s*', r'\1. ', t),
-        lambda t: re.sub(r'^(?:Claim\s*)?(\d+):\s*\1\.\s*', r'\1. ', t, flags=re.IGNORECASE),
-        lambda t: re.sub(r'^(?:Claim\s*)?\d+\.?\s*', '', t, flags=re.IGNORECASE),
-        lambda t: re.sub(r'^\d+\)\s*', '', t),
-        lambda t: re.sub(r'\s+', ' ', t),
-        lambda t: t.strip()
-    ]
-    return reduce(lambda text, operation: operation(text), claim_cleaning_operations, claim)
-
-def consolidate_claims(claims: List[str]) -> List[str]:
-    """Consolidate claims by removing redundant numbering and merging related claims"""
-    if not claims:
-        return []
-    consolidated = []
-    current_claim_parts = []
-    for claim in claims:
-        cleaned_claim = clean_claim_text(claim)
-        if cleaned_claim:
-            if re.search(r'according\s+to\s+claim\s+\d+', cleaned_claim, flags=re.IGNORECASE):
-                current_claim_parts.append(cleaned_claim)
-            else:
-                if current_claim_parts:
-                    consolidated.append(' '.join(current_claim_parts))
-                    current_claim_parts = []
-                current_claim_parts = [cleaned_claim]
-    if current_claim_parts:
-        consolidated.append(' '.join(current_claim_parts))
-    return consolidated
 
 def fetch_patent_html(patent_url: str) -> str:
     """Fetch HTML content from Google Patents URL"""
@@ -214,22 +164,46 @@ def calculate_total_cost(lm: dspy.LM) -> float:
     """Calculate total cost from LM history using functional approach"""
     return sum([x['cost'] for x in lm.history if x['cost'] is not None])
 
+# Define a signature for the judge
+class ExtractionJudge(dspy.Signature):
+    html: str = dspy.InputField(desc="Original HTML content")
+    extracted: dict = dspy.InputField(desc="Extracted fields")
+    assessment: bool = dspy.OutputField(desc="Is the extraction correct and comprehensive?")
+
+def create_extraction_metric():
+    """Create a closure that encapsulates the judge instance for extraction evaluation"""
+    # Create a judge module, asking the LLM itself to evaluate itself
+    judge = dspy.Predict(ExtractionJudge)
+    
+    def dspy_extraction_metric(example, pred, trace=None):
+        assessment = judge(html=example.html, extracted=pred).assessment # should be True/False
+        validation_results = PatentValidator.validate_all(pred.patent_data)
+        if all(vr.is_valid for vr in validation_results):
+            return True & assessment
+        failed_validations = [vr for vr in validation_results if not vr.is_valid]
+        print(f"Validation failures: {[vr.message for vr in failed_validations]}, LLM assessment: {assessment}")
+        return False & assessment
+    
+    return dspy_extraction_metric
+
+# Create the metric function using the closure
+dspy_extraction_metric = create_extraction_metric()
+
 def extract_patent_data(patent_url: str) -> ExtractionResult:
     """Main function to extract structured patent data with cost tracking"""
+    print(f"Fetching the HTML content from the patent URL: {patent_url}")
     html_content = fetch_patent_html(patent_url)
+
+    print(f"Predicting the patent data from the HTML content using DSPy prompt")
     predictor = dspy.Predict(PatentParser)
-    result = predictor(html_content=html_content)
-    max_retries = 3
-    attempts = 1
-    for attempt in range(max_retries):
-        validation_results = PatentValidator.validate_all(result.patent_data)
-        if all(vr.is_valid for vr in validation_results):
-            break
-        failed_validations = [vr for vr in validation_results if not vr.is_valid]
-        print(f"Attempt {attempt + 1}: Validation failures: {[vr.message for vr in failed_validations]}")
-        result = predictor(html_content=html_content)
-        attempts += 1
-    total_cost = calculate_total_cost(lm)
+    result = predictor(html=html_content)
+
+    print(f"Evaluating the patent data using the LLM-as-judge metric")
+    # Evaluate using the LLM-as-judge metric, with_inputs() is essential.
+    devset = [dspy.Example(html=html_content).with_inputs('html')]
+    evaluator = dspy.evaluate.Evaluate(devset=devset, metric=create_extraction_metric())
+    eval_results = evaluator(predictor)
+    
     def clean_patent_field(field_value: str) -> str:
         return clean_text(field_value)
     def clean_claims(claims: List[str]) -> List[str]:
@@ -241,7 +215,10 @@ def extract_patent_data(patent_url: str) -> ExtractionResult:
         claims=clean_claims(result.patent_data.claims),
         summary=clean_patent_field(result.patent_data.summary)
     )
-    return cleaned_data, total_cost, attempts
+
+    total_cost = calculate_total_cost(lm)
+
+    return cleaned_data, total_cost, eval_results
 
 def process_patents_batch(patent_ids: List[tuple[str, int]]) -> dict:
     """
@@ -259,21 +236,19 @@ def process_patents_batch(patent_ids: List[tuple[str, int]]) -> dict:
         country_code, patent_number = patent_tuple
         try:
             patent_url = construct_patent_url(country_code, patent_number)
-            patent_data, total_cost, attempts = extract_patent_data(patent_url)
+            patent_data, total_cost, eval_results = extract_patent_data(patent_url)
             patent_id = extract_patent_id(country_code, patent_number)
-            return patent_id, (patent_data, total_cost, attempts)
+            return patent_id, (patent_data, total_cost, eval_results)
         except Exception as e:
             patent_id = extract_patent_id(country_code, patent_number)
             print(f"Error processing patent {patent_id}: {e}")
-            return patent_id, (None, 0.0, 0)
+            return patent_id, (None, 0.0)
     results = dict(map(process_single_patent, patent_ids))
     successful_extractions = sum(1 for data in results.values() if data[0] is not None)
     total_cost = sum(data[1] for data in results.values() if data[0] is not None)
-    total_attempts = sum(data[2] for data in results.values() if data[0] is not None)
     print(f"Batch processing complete:")
     print(f"  Successful extractions: {successful_extractions}/{len(patent_ids)}")
     print(f"  Total cost: ${total_cost:.6f}")
-    print(f"  Total attempts: {total_attempts}")
     return results
 
 # Example usage
@@ -283,7 +258,7 @@ if __name__ == "__main__":
     ]
     try:
         patent_results = process_patents_batch(patent_ids)
-        for patent_id, (patent_data, total_cost, attempts) in patent_results.items():
+        for patent_id, (patent_data, total_cost, eval_results) in patent_results.items():
             if patent_data is not None:
                 print(f"\n=== Patent {patent_id} ===")
                 print("Title:", patent_data.title)
@@ -294,7 +269,8 @@ if __name__ == "__main__":
                     print(f"  {claim}")
                 print("Summary:", patent_data.summary)
                 print(f"Claims count: {len(patent_data.claims)}")
-                print(f"Cost: ${total_cost:.6f}, Attempts: {attempts}")
+                print(f"Cost: ${total_cost:.6f}")
+                print(f"Evaluation results: {eval_results}")
             else:
                 print(f"\n=== Patent {patent_id} ===")
                 print("Failed to extract data")
