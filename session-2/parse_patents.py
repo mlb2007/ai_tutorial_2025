@@ -1,15 +1,12 @@
 import dspy
 from pydantic import BaseModel, Field
-from typing import List, Optional, Callable
+from typing import List
 import requests
-from bs4 import BeautifulSoup
 import os
 from dotenv import load_dotenv
 import re
 from functools import reduce
 from dataclasses import dataclass
-
-from dspy.evaluate import Evaluate
 
 # Suppress Pydantic warnings
 import warnings
@@ -49,7 +46,7 @@ class ExtractionResult:
     """Result of patent extraction with cost tracking"""
     patent_data: PatentData
     total_cost: float
-    attempts: int
+    eval_results: list[bool]
 
 class PatentValidator:
     """Functional validator for patent data using composition pattern"""
@@ -218,7 +215,7 @@ def extract_patent_data(patent_url: str) -> ExtractionResult:
 
     total_cost = calculate_total_cost(lm)
 
-    return cleaned_data, total_cost, eval_results
+    return ExtractionResult(patent_data=cleaned_data, total_cost=total_cost, eval_results=eval_results)
 
 def process_patents_batch(patent_ids: List[tuple[str, int]]) -> dict:
     """
@@ -232,20 +229,20 @@ def process_patents_batch(patent_ids: List[tuple[str, int]]) -> dict:
         return f"https://patents.google.com/patent/{country_code}{patent_number}"
     def extract_patent_id(country_code: str, patent_number: int) -> str:
         return f"{country_code}{patent_number}"
-    def process_single_patent(patent_tuple: tuple[str, int]) -> tuple[str, tuple]:
+    def process_single_patent(patent_tuple: tuple[str, int]) -> tuple[str, ExtractionResult]:
         country_code, patent_number = patent_tuple
         try:
             patent_url = construct_patent_url(country_code, patent_number)
-            patent_data, total_cost, eval_results = extract_patent_data(patent_url)
+            extraction_result = extract_patent_data(patent_url)
             patent_id = extract_patent_id(country_code, patent_number)
-            return patent_id, (patent_data, total_cost, eval_results)
+            return patent_id, extraction_result
         except Exception as e:
             patent_id = extract_patent_id(country_code, patent_number)
             print(f"Error processing patent {patent_id}: {e}")
-            return patent_id, (None, 0.0)
+            return patent_id, None
     results = dict(map(process_single_patent, patent_ids))
-    successful_extractions = sum(1 for data in results.values() if data[0] is not None)
-    total_cost = sum(data[1] for data in results.values() if data[0] is not None)
+    successful_extractions = sum(1 for data in results.values() if data is not None)
+    total_cost = sum(data.total_cost for data in results.values() if data is not None)
     print(f"Batch processing complete:")
     print(f"  Successful extractions: {successful_extractions}/{len(patent_ids)}")
     print(f"  Total cost: ${total_cost:.6f}")
@@ -258,19 +255,19 @@ if __name__ == "__main__":
     ]
     try:
         patent_results = process_patents_batch(patent_ids)
-        for patent_id, (patent_data, total_cost, eval_results) in patent_results.items():
-            if patent_data is not None:
+        for patent_id, extraction_result in patent_results.items():
+            if extraction_result.patent_data is not None:
                 print(f"\n=== Patent {patent_id} ===")
-                print("Title:", patent_data.title)
-                print("Abstract:", patent_data.abstract[:200] + "..." if len(patent_data.abstract) > 200 else patent_data.abstract)
-                print("Background:", patent_data.background[:200] + "..." if len(patent_data.background) > 200 else patent_data.background)
+                print("Title:", extraction_result.patent_data.title)
+                print("Abstract:", extraction_result.patent_data.abstract[:200] + "..." if len(extraction_result.patent_data.abstract) > 200 else extraction_result.patent_data.abstract)
+                print("Background:", extraction_result.patent_data.background[:200] + "..." if len(extraction_result.patent_data.background) > 200 else extraction_result.patent_data.background)
                 print("Claims:")
-                for _, claim in enumerate(patent_data.claims, 1):
+                for _, claim in enumerate(extraction_result.patent_data.claims, 1):
                     print(f"  {claim}")
-                print("Summary:", patent_data.summary)
-                print(f"Claims count: {len(patent_data.claims)}")
-                print(f"Cost: ${total_cost:.6f}")
-                print(f"Evaluation results: {eval_results}")
+                print("Summary:", extraction_result.patent_data.summary)
+                print(f"Claims count: {len(extraction_result.patent_data.claims)}")
+                print(f"Cost: ${extraction_result.total_cost:.6f}")
+                print(f"Evaluation results: {extraction_result.eval_results}")
             else:
                 print(f"\n=== Patent {patent_id} ===")
                 print("Failed to extract data")
