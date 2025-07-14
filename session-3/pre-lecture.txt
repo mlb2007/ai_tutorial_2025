@@ -1,0 +1,51 @@
+emebedding text allows for feature engineering of text
+e.g. clustering, regression analysis, classification etc.
+
+RAG: (Retrieval Augmentented) Generation
+
+We need to retrieve "similar"documents from a DB, a custom DB
+Now, to retieve the docs, we use embeddings of the docs and also index the docs
+for faster search
+
+Since the docs retrieved may be large, we chunk them (slice them up) and then
+embed them. 
+
+Now given a query, we retrieve a subset of relevant text, not full
+documents, but chunks of relevant information!
+
+Then we use LLMs and provide the chunks of text to LLMs as "context" and then
+query will be such that it is a "summary" of the text given as context.
+
+The key knowledge base is available as prompt (as context), which is then used
+by LLM for completion
+
+### Fine-tuning versus RAG
+```
+From:https://github.com/openai/openai-cookbook/blob/main/examples/Question_answering_using_embeddings.ipynb
+
+Why search is better than fine-tuning
+GPT can learn knowledge in two ways:
+
+Via model weights (i.e., fine-tune the model on a training set)
+Via model inputs (i.e., insert the knowledge into an input message)
+Although fine-tuning can feel like the more natural option—training on data is how GPT learned all of its other knowledge, 
+after all—we generally do not recommend it as a way to teach the model knowledge. Fine-tuning is better suited to teaching specialized tasks 
+or styles, and is less reliable for factual recall.
+
+As an analogy, model weights are like long-term memory. When you fine-tune a model, it's like studying for an exam a week away. 
+When the exam arrives, the model may forget details, or misremember facts it never read.
+
+In contrast, message inputs are like short-term memory. When you insert knowledge into a message, it's like taking an exam with open notes. 
+With notes in hand, the model is more likely to arrive at correct answers.
+
+One downside of text search relative to fine-tuning is that each model is
+limited by a maximum amount of text it can read at once: ~128K tokens for input
+
+```
+
+Although it argues that fine-tuning is like long term memory and thus less
+useful than the short-term RAG, I believe that deeper patterns are determined
+only by deep-learning or fine-tuning and not by dumping knowledge base then and
+there ... <= BM
+
+
