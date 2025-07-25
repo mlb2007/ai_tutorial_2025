@@ -1,0 +1,27 @@
+==> Super great ref:
+Ref: https://dylancastillo.co/posts/react-agent-langgraph.html
+Ref: https://dylancastillo.co/posts/agentic-workflows-langgraph.html
+Citation:
+Castillo, Dylan. 2025. “Agentic Workflows from Scratch with (and Without)
+LangGraph.” July 3, 2025.
+https://dylancastillo.co/posts/agentic-workflows-langgraph.html.
+
+
+Agents have agency, i.e. ability to make decisions/think.
+
+The agentic workflow is needed when "thinking" has to be done. usually, this is
+the human in the loop, but now, LLMs can be asked to understand meanings of
+intention and make decision.
+
+To support the actions, we add tools (function calls) that LLM can leverage and
+execute. It results in an output, which the LLM observes and continues the loop
+until some desired end point (set by user) is achieved.
+
+So, the loop that LLM works thru is "Think, Act, Observe".
+
+All of the above is achieved thru function calling, thus removing the human in
+the loop for iterative work ...
+
+Note: The LLM only decides if a tool must be used. It does not call the tool on
+its own. It delegates it to the user, who must invoke the tool.
+

@@ -1,0 +1,51 @@
+context plays into LLM affecting it greatly.
+- RAG is one way of affecting context
+- Agents are more flexible in curating context
+
+AI agents:
+ -- uses LLMs
+ -- uses tools
+
+Agency: the ability to decide and act independently and make own choices, given
+a task or problem
+In this context LLMs are completion mechanisms (dumb, no agency) and tools are
+used/attached to LLMs to manipulate the completion. Agents do the work of
+coordinating the manipulation of tools for some required "completion" based on
+prompts, which define the task to be accomplished. 
+In this though process, RAG can be considered as a tool which simply dumps text
+from some source to LLM for manipulating its "completion"
+tool ==> DB/VectorIndex retriever tool
+agent ==> human who writes the pipeline flow to do RAG
+
+AI agent is to make LLMs use tools that are provided or even make up its own
+tools and then use it "appropriately" without humans intervening. For example
+even with RAG, even if there was a retrieval tool, it was ultimately managed by
+human. 
+
+Same case with prompts. Humans can provide a prompt (no AI agency here) or if
+we consider agency, then we let AI (LLM) pick its own prompt from a set of
+prompts or even write its own prompt based on requirements (DSPy!)
+
+LLM workflows with LLM as agents
+
+1. chaining
+2. decision making (routing)
+3. parallel evaluations (parallel different tasks) => sectioning
+4. parallel evaluation (parallel same tasks) => voting
+
+5. delegation to workers
+6. eval-optimze loop
+
+5,6 have high autonomy for LLM as there is potential feedback to LLM to course
+correct itself compared to 1-4
+
+eval-loop types:
+1. rule-based
+  -- tru/false
+  -- correct format or not
+  -- correct answer or not
+  -- length of output, readibility score, BLEU score (NLP) (with threshold,
+this turns into binary) 
+2. LLM based
+3. real-world data (data feedback) based
+
