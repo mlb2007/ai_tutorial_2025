@@ -25,3 +25,10 @@ the loop for iterative work ...
 Note: The LLM only decides if a tool must be used. It does not call the tool on
 its own. It delegates it to the user, who must invoke the tool.
 
+Agents are used when don't know the actual steps, just tools for doing some
+work. A simple iterative flow using langgraph will do the trick.
+
+Agentic workflow is a workflow where the steps are known and it is all about
+the work flow.
+
+==> not very convincing difference
